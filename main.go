@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"encoding/hex"
+	"flag"
 	"fmt"
 	"io"
 	"io/ioutil"
@@ -29,6 +30,29 @@ func parseReader(bin string, r io.Reader) ([]byte, error) {
 func sender(tx *types.Transaction) (common.Address, error) {
 	signer := types.LatestSignerForChainID(tx.ChainId())
 	return types.Sender(signer, tx)
+}
+
+func csvTx(tx *types.Transaction) (string, error) {
+	sender, err := sender(tx)
+	if err != nil {
+		return "", err
+	}
+	v, r, s := tx.RawSignatureValues()
+	return fmt.Sprintf("%s,%s,%d,%s,%s,%d,%s,%d,%x,%x,%x,%s,%x",
+		tx.Hash().Hex(),
+		tx.ChainId(),
+		tx.Type(),
+		sender.Hex(),
+		tx.To().Hex(),
+		tx.Nonce(),
+		tx.GasPrice(),
+		tx.Gas(),
+		v,
+		r,
+		s,
+		tx.Value(),
+		tx.Data(),
+	), nil
 }
 
 func prettyTx(tx *types.Transaction) (string, error) {
@@ -81,9 +105,13 @@ func main() {
 		fmt.Fprintln(os.Stderr, "Accepts either piped data or a single arg, but not both")
 		os.Exit(1)
 	}
+	var csv bool
+	flag.BoolVar(&csv, "csv", false, "Output in CSV")
+	flag.Parse()
+	args := flag.Args()
 	var b []byte
-	if len(os.Args) > 1 {
-		b = []byte(os.Args[1])
+	if len(args) > 1 {
+		b = []byte(args[1])
 	} else {
 		b, err = parseReader(os.Args[0], os.Stdin)
 		if err != nil {
@@ -103,7 +131,11 @@ func main() {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
-	s, err := prettyTx(&tx)
+	printFn := prettyTx
+	if csv {
+		printFn = csvTx
+	}
+	s, err := printFn(&tx)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
